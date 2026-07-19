@@ -20,6 +20,13 @@ BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-5")
 
+# Groq (OpenAI-compatible API, generous free tier). If both keys are set,
+# Anthropic wins — override with LLM_PROVIDER=groq.
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "llama-3.3-70b-versatile")
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+LLM_PROVIDER = os.environ.get("LLM_PROVIDER", "")  # "", "anthropic", or "groq"
+
 # Chunking bounds (in lines). Functions longer than CHUNK_MAX_LINES get
 # split; consecutive tiny top-level statements get grouped up to
 # CHUNK_TARGET_LINES.
