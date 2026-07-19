@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codebase Q&A</title>
+<style>
+  :root {
+    --bg: #16171d; --panel: #1e1f26; --border: #2e303a;
+    --text: #d7d7db; --text-dim: #8b8b93; --accent: #7aa2f7;
+    --green: #62d196; --red: #f06464; --yellow: #e0be64;
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.55 system-ui, sans-serif;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 32px 20px 80px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--text-dim); margin: 0 0 28px; font-size: 14px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 18px; margin-bottom: 18px;
+  }
+  form.row { display: flex; gap: 10px; }
+  input[type=url], input[type=text] {
+    flex: 1; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px;
+    font: inherit;
+  }
+  input:focus { outline: none; border-color: var(--accent); }
+  button {
+    background: var(--accent); color: #16171d; border: none; border-radius: 8px;
+    padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  .repo {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 8px; margin-top: 10px;
+    cursor: pointer;
+  }
+  .repo:hover { border-color: var(--accent); }
+  .repo.selected { border-color: var(--accent); background: rgba(122,162,247,.08); }
+  .repo .name { font-weight: 600; }
+  .repo .meta { color: var(--text-dim); font-size: 13px; margin-left: auto; }
+  .status { font-size: 12px; padding: 2px 9px; border-radius: 99px; border: 1px solid; }
+  .status.ready { color: var(--green); border-color: var(--green); }
+  .status.failed { color: var(--red); border-color: var(--red); }
+  .status.pending, .status.cloning, .status.chunking, .status.embedding
+    { color: var(--yellow); border-color: var(--yellow); }
+  .answer { white-space: pre-wrap; }
+  .notice { color: var(--text-dim); font-size: 13.5px; }
+  details.source { margin-top: 10px; border: 1px solid var(--border); border-radius: 8px; }
+  details.source summary {
+    padding: 9px 12px; cursor: pointer; font-family: var(--mono); font-size: 13px;
+    color: var(--accent); list-style: none; display: flex; gap: 8px; align-items: baseline;
+  }
+  details.source summary .sym { color: var(--text-dim); }
+  details.source pre {
+    margin: 0; padding: 12px; border-top: 1px solid var(--border);
+    overflow-x: auto; font: 12.5px/1.5 var(--mono); color: var(--text);
+  }
+  .spinner { color: var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Codebase Q&amp;A</h1>
+  <p class="sub">Paste a public GitHub repo, wait for indexing, then ask questions about the code — answers cite real files and line numbers.</p>
+
+  <div class="panel">
+    <form class="row" id="repo-form">
+      <input type="url" id="repo-url" placeholder="https://github.com/user/repo" required>
+      <button type="submit">Index repo</button>
+    </form>
+    <div id="repo-list"></div>
+  </div>
+
+  <div class="panel" id="ask-panel" hidden>
+    <form class="row" id="ask-form">
+      <input type="text" id="question" placeholder='e.g. "where is authentication handled?"' required>
+      <button type="submit" id="ask-btn">Ask</button>
+    </form>
+    <div id="result"></div>
+  </div>
+</div>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+let selectedRepo = null;
+let pollTimer = null;
+
+async function api(path, opts) {
+  const res = await fetch(path, {
+    headers: { "Content-Type": "application/json" }, ...opts,
+  });
+  if (!res.ok) throw new Error((await res.json()).detail || res.statusText);
+  return res.json();
+}
+
+function statusChip(repo) {
+  return `<span class="status ${repo.status}">${repo.status}</span>`;
+}
+
+async function refreshRepos() {
+  const { repos } = await api("/api/repos");
+  const list = $("#repo-list");
+  list.innerHTML = repos.map((r) => `
+    <div class="repo ${selectedRepo === r.id ? "selected" : ""}" data-id="${r.id}" data-status="${r.status}">
+      <span class="name">${r.name}</span>
+      ${statusChip(r)}
+      <span class="meta">${r.status === "ready" ? r.chunk_count + " chunks" : (r.error || "")}</span>
+    </div>`).join("");
+  for (const el of list.querySelectorAll(".repo")) {
+    el.onclick = () => {
+      if (el.dataset.status !== "ready") return;
+      selectedRepo = Number(el.dataset.id);
+      $("#ask-panel").hidden = false;
+      refreshRepos();
+      $("#question").focus();
+    };
+  }
+  const busy = repos.some((r) => !["ready", "failed"].includes(r.status));
+  clearTimeout(pollTimer);
+  if (busy) pollTimer = setTimeout(refreshRepos, 2000);
+}
+
+$("#repo-form").onsubmit = async (e) => {
+  e.preventDefault();
+  await api("/api/repos", { method: "POST", body: JSON.stringify({ url: $("#repo-url").value }) });
+  $("#repo-url").value = "";
+  refreshRepos();
+};
+
+$("#ask-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const btn = $("#ask-btn");
+  btn.disabled = true;
+  $("#result").innerHTML = '<p class="spinner">Searching…</p>';
+  try {
+    const data = await api(`/api/repos/${selectedRepo}/ask`, {
+      method: "POST", body: JSON.stringify({ question: $("#question").value }),
+    });
+    let html = "";
+    if (data.answer) {
+      html += `<p class="answer">${escapeHtml(data.answer)}</p>`;
+    } else if (!data.llm_configured) {
+      html += `<p class="notice">No LLM key configured — showing raw retrieval results. The chunks below are what the model would be given to answer from.</p>`;
+    }
+    if (!data.sources.length) html += `<p class="notice">Nothing relevant found.</p>`;
+    for (const s of data.sources) {
+      html += `
+        <details class="source">
+          <summary>${s.file_path}:${s.start_line}-${s.end_line}${s.symbol ? ` <span class="sym">${s.symbol}</span>` : ""}</summary>
+          <pre>${escapeHtml(s.content)}</pre>
+        </details>`;
+    }
+    $("#result").innerHTML = html;
+  } catch (err) {
+    $("#result").innerHTML = `<p class="notice">Error: ${escapeHtml(err.message)}</p>`;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+refreshRepos();
+</script>
+</body>
+</html>
