@@ -8,10 +8,24 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql://localhost:5432/rag_codebase"
 )
 
+# Embedding provider: "local" (sentence-transformers, runs on this machine,
+# no key, no cost — the default for dev and for the eval) or "gemini"
+# (Google's hosted embedding API — no torch, so it fits tiny free hosting
+# tiers like Render's 512MB). The two produce different-dimension vectors,
+# so EMBEDDING_DIM must match the chosen provider and a DB indexed with one
+# can't be queried with the other.
+EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "local")
+
 # Local embedding model (sentence-transformers). 384-dim, ~130MB download on
-# first use, then cached. Swappable via env without touching code.
+# first use, then cached.
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
-EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", "384"))
+
+# Gemini embedding model (768-dim). Free via Google AI Studio.
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_EMBEDDING_MODEL = os.environ.get("GEMINI_EMBEDDING_MODEL", "text-embedding-004")
+
+_DEFAULT_DIM = "768" if EMBEDDING_PROVIDER == "gemini" else "384"
+EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", _DEFAULT_DIM))
 
 # bge models are trained to expect this prefix on QUERIES only (not on the
 # indexed passages) — retrieval quality measurably drops without it.
