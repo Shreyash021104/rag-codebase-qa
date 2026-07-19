@@ -41,11 +41,18 @@ CREATE INDEX IF NOT EXISTS idx_chunks_embedding
 
 
 def get_conn() -> psycopg.Connection:
-    conn = psycopg.connect(DATABASE_URL)
+    # prepare_threshold=None disables psycopg3's automatic prepared
+    # statements. Required when the DATABASE_URL points at a transaction-mode
+    # connection pooler (e.g. Neon's -pooler endpoint / PgBouncer): a pooled
+    # connection can be handed to a different backend between statements, so
+    # a prepared statement created on one won't exist on the next, throwing
+    # "prepared statement does not exist". Harmless against a direct
+    # connection too, so it's safe to leave on unconditionally.
+    conn = psycopg.connect(DATABASE_URL, prepare_threshold=None)
     register_vector(conn)
     return conn
 
 
 def init_schema() -> None:
-    with psycopg.connect(DATABASE_URL, autocommit=True) as conn:
+    with psycopg.connect(DATABASE_URL, autocommit=True, prepare_threshold=None) as conn:
         conn.execute(SCHEMA)
