@@ -41,7 +41,8 @@ specific ways this project is built around:
          └──▶ code-aware BM25 top-20 ───────────┼──▶ reciprocal rank fusion ──▶ top 8
               (markPresent → markpresent,       │
                mark, present)                   ▼
-                                     Claude, strictly grounded:
+                                     LLM (Claude or Groq/Llama),
+                                     strictly grounded:
                                      "answer ONLY from these excerpts,
                                       cite (file:line) as you go"
                                      — or, with no API key configured,
@@ -56,8 +57,9 @@ specific ways this project is built around:
 | Embeddings | `BAAI/bge-small-en-v1.5` via sentence-transformers — local, free, 384-dim |
 | Vector store | Postgres + pgvector (HNSW, cosine) — no extra moving part beyond the DB |
 | Keyword leg | BM25 (`rank-bm25`) with code-aware tokenization, fused via RRF |
-| LLM | Claude API, strictly grounded prompting with mandatory citations; optional at runtime |
+| LLM | Claude *or* Groq (Llama) — pluggable, auto-detected from configured key; strictly grounded prompting with mandatory citations; optional at runtime |
 | API/frontend | FastAPI + a single static page (no build step) |
+| Deployment | Hugging Face Spaces (Docker) + Neon Postgres — both free tiers; Groq's free LLM tier keeps the whole stack at $0 |
 
 ## The hardest decisions
 
