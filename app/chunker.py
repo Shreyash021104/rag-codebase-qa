@@ -54,9 +54,17 @@ EXTENSION_LANGUAGES: dict[str, str] = {
     ".sql": "sql",
 }
 
-# Extensions worth indexing as plain text even though they aren't parseable
-# code — READMEs and configs answer a lot of "how do I run this" questions.
-TEXT_EXTENSIONS = {".md", ".txt", ".rst", ".yaml", ".yml", ".toml", ".json", ".env.example"}
+# Extensions indexed as plain text (window-chunked): docs/configs, which
+# answer a lot of "how do I run this" questions, plus markup/style files
+# (HTML/CSS/SCSS). Those last three are common enough in web frontends that
+# skipping them leaves a real coverage gap — a static site would otherwise
+# index to almost nothing. They're windowed rather than AST-parsed because
+# the "one chunk per function/class" model doesn't map onto CSS rules or
+# HTML structure the way it does onto code.
+TEXT_EXTENSIONS = {
+    ".md", ".txt", ".rst", ".yaml", ".yml", ".toml", ".json", ".env.example",
+    ".html", ".css", ".scss", ".less",
+}
 
 
 def language_for_path(path: str) -> str | None:
