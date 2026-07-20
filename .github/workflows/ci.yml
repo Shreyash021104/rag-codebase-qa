@@ -46,3 +46,45 @@ jobs:
 
       - name: Run tests
         run: python -m pytest -q
+
+  # Actually build and boot the docker-compose stack and hit the health
+  # endpoint, so the one-command quickstart is verified end-to-end rather
+  # than assumed. Slower than the unit tests (it builds the torch image), so
+  # it's a separate job.
+  docker-compose-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start the stack
+        run: docker compose up -d --build
+
+      - name: Wait for the app to become healthy
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8000/health; then
+              echo "app healthy"; exit 0
+            fi
+            sleep 5
+          done
+          echo "app never became healthy" >&2
+          docker compose logs
+          exit 1
+
+      - name: Index a small repo and confirm it reaches 'ready'
+        run: |
+          curl -sf -X POST http://localhost:8000/api/repos \
+            -H "Content-Type: application/json" \
+            -d '{"url": "https://github.com/Shreyash021104/holi"}'
+          for i in $(seq 1 60); do
+            status=$(curl -sf http://localhost:8000/api/repos/1 | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])" || echo pending)
+            echo "status: $status"
+            [ "$status" = "ready" ] && exit 0
+            [ "$status" = "failed" ] && { docker compose logs app; exit 1; }
+            sleep 5
+          done
+          echo "indexing did not finish" >&2; exit 1
+
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
