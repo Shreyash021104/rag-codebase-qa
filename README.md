@@ -5,7 +5,11 @@ plain English — "how does the token bucket refill?", "where is send_file
 implemented?" — and get answers grounded in the actual code, citing real files and
 line numbers instead of hallucinated generalities.
 
-![Demo](docs/demo.gif)
+<p align="center">
+  <img src="docs/demo.gif" alt="Asking a codebase questions in plain English and getting answers with file:line citations" width="100%" />
+  <br>
+  <em>Ask a repo questions in plain English; get answers grounded in the real code with file:line citations. (<a href="docs/demo.mp4">full-quality video</a>)</em>
+</p>
 
 ## Run it in one command
 
