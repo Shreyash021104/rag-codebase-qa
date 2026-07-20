@@ -1,14 +1,3 @@
----
-title: RAG Codebase Q&A
-emoji: 🔍
-colorFrom: blue
-colorTo: purple
-sdk: docker
-app_port: 7860
-pinned: false
-license: mit
----
-
 # RAG-Powered Codebase Q&A Assistant
 
 Paste a public GitHub repo, wait a few seconds for indexing, then ask questions in
