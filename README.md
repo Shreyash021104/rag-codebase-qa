@@ -113,19 +113,22 @@ Two code-specific details that matter more than they look:
 
 ### 3. Local embeddings, and the LLM as the optional last step — not a load-bearing one
 
-Embeddings run locally (bge-small via sentence-transformers) instead of through a
-paid API: zero cost, no key needed, and the entire ingestion + retrieval + eval
-pipeline is testable end-to-end with no external dependency. The Claude call for
-answer synthesis is the *last, optional* step: with no `ANTHROPIC_API_KEY`
-configured, the API returns the retrieved excerpts with citations instead of prose —
-degraded, not broken. This mirrors how the system actually fails in production too:
-if retrieval is good, the raw excerpts are still useful; if retrieval is bad, no
-LLM can save the answer anyway.
+Embeddings are pluggable via `EMBEDDING_PROVIDER`: **local** (bge-small via
+sentence-transformers — zero cost, no key, and the whole pipeline is testable with no
+external dependency; the default for dev) or **gemini** (Google's hosted embedding
+API — no torch, so it fits tiny free hosting tiers, which is what the live deployment
+uses). The LLM call for answer synthesis is likewise the *last, optional* step and
+provider-agnostic (Claude or Groq): with no key configured at all, the API returns
+the retrieved excerpts with citations instead of prose — degraded, not broken. That
+mirrors how the system actually fails in production: if retrieval is good, the raw
+excerpts are still useful; if retrieval is bad, no LLM can save the answer anyway.
 
-The honest trade-off: bge-small is measurably weaker than hosted embedding APIs on
-long/nuanced queries, and English-only. The model is one env var to swap
-(`EMBEDDING_MODEL`), and the eval set below is how you'd measure whether an upgrade
-is worth it — that's the point of having one.
+Having the eval set (below) made this swap a measured decision rather than a guess —
+moving from local bge-small to Gemini embeddings lifted top-1 retrieval accuracy from
+60% to 80% on the same 15 questions, which is exactly the kind of "is this upgrade
+worth it" question the harness exists to answer. The trade-off in the other direction:
+Gemini's free tier is rate-limited, so indexing throttles into small sub-batches with
+backoff (`app/embeddings.py`) — fine for portfolio-scale repos, slower for huge ones.
 
 ### 4. Measure retrieval, don't vibe-check it
 
@@ -134,13 +137,13 @@ is worth it — that's the point of having one.
 — labeled by reading the code, not generated). The metric is top-k retrieval
 accuracy: did an expected file appear in the top k chunks?
 
-Measured results:
+Measured results, both embedding providers:
 
-| metric | result |
-|---|---|
-| top-1 accuracy | 9/15 (60%) |
-| top-3 accuracy | 13/15 (87%) |
-| **top-5 accuracy** | **15/15 (100%)** |
+| metric | local (bge-small) | Gemini (deployed) |
+|---|---|---|
+| top-1 accuracy | 9/15 (60%) | 12/15 (80%) |
+| top-3 accuracy | 13/15 (87%) | **15/15 (100%)** |
+| top-5 accuracy | 15/15 (100%) | 15/15 (100%) |
 
 Also verified against a real third-party codebase (Flask, 954 chunks, indexed in
 ~24s locally): "how does `app.route` register a view function?" correctly surfaces

@@ -20,9 +20,11 @@ EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "local")
 # first use, then cached.
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5")
 
-# Gemini embedding model (768-dim). Free via Google AI Studio.
+# Gemini embedding model. gemini-embedding-001 defaults to 3072-dim but
+# supports configurable output; we pin 768 to keep the pgvector column and
+# HNSW index compact. Free via Google AI Studio.
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_EMBEDDING_MODEL = os.environ.get("GEMINI_EMBEDDING_MODEL", "text-embedding-004")
+GEMINI_EMBEDDING_MODEL = os.environ.get("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
 
 _DEFAULT_DIM = "768" if EMBEDDING_PROVIDER == "gemini" else "384"
 EMBEDDING_DIM = int(os.environ.get("EMBEDDING_DIM", _DEFAULT_DIM))
