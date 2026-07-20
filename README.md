@@ -5,6 +5,31 @@ plain English — "how does the token bucket refill?", "where is send_file
 implemented?" — and get answers grounded in the actual code, citing real files and
 line numbers instead of hallucinated generalities.
 
+<p align="center">
+  <img src="docs/demo.gif" alt="Asking a codebase questions in plain English and getting answers with file:line citations" width="100%" />
+  <br>
+  <em>Ask a repo questions in plain English; get answers grounded in the real code with file:line citations. (<a href="docs/demo.mp4">full-quality video</a>)</em>
+</p>
+
+## Run it in one command
+
+Self-hostable, and **no API key required** — embeddings run locally, so you can
+index a repo and get cited retrieval results with nothing but Docker installed:
+
+```bash
+git clone https://github.com/Shreyash021104/rag-codebase-qa
+cd rag-codebase-qa
+docker compose up          # Postgres+pgvector and the app, wired together
+# open http://localhost:8000
+```
+
+The first `docker compose up` builds the image (installs deps, bakes in the embedding
+model) — a few minutes; after that it's instant. Want synthesized prose answers on
+top of the retrieved code? Set a free [Groq](https://console.groq.com) key first:
+`export GROQ_API_KEY=...` then `docker compose up`.
+
+Prefer a manual (non-Docker) setup? See [Running locally](#running-locally).
+
 ## The problem
 
 LLMs answer questions about code fluently and are routinely wrong about *your* code
