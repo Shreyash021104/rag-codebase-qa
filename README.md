@@ -54,12 +54,11 @@ specific ways this project is built around:
 | Layer | Choice |
 |---|---|
 | Ingestion/chunking | Python, tree-sitter (`tree-sitter-language-pack`, 20+ languages) |
-| Embeddings | `BAAI/bge-small-en-v1.5` via sentence-transformers — local, free, 384-dim |
+| Embeddings | `BAAI/bge-small-en-v1.5` via sentence-transformers (default: local, free, no key, 384-dim) — pluggable to Google Gemini (768-dim, hosted) |
 | Vector store | Postgres + pgvector (HNSW, cosine) — no extra moving part beyond the DB |
 | Keyword leg | BM25 (`rank-bm25`) with code-aware tokenization, fused via RRF |
 | LLM | Claude *or* Groq (Llama) — pluggable, auto-detected from configured key; strictly grounded prompting with mandatory citations; optional at runtime |
 | API/frontend | FastAPI + a single static page (no build step) |
-| Deployment | Hugging Face Spaces (Docker) + Neon Postgres — both free tiers; Groq's free LLM tier keeps the whole stack at $0 |
 
 ## The hardest decisions
 
@@ -103,21 +102,24 @@ Two code-specific details that matter more than they look:
 ### 3. Local embeddings, and the LLM as the optional last step — not a load-bearing one
 
 Embeddings are pluggable via `EMBEDDING_PROVIDER`: **local** (bge-small via
-sentence-transformers — zero cost, no key, and the whole pipeline is testable with no
-external dependency; the default for dev) or **gemini** (Google's hosted embedding
-API — no torch, so it fits tiny free hosting tiers, which is what the live deployment
-uses). The LLM call for answer synthesis is likewise the *last, optional* step and
+sentence-transformers — zero cost, no key, no quota, and the whole pipeline is
+testable with no external dependency; the default, and what you get on a fresh clone)
+or **gemini** (Google's hosted embedding API — no torch, so it fits tiny free hosting
+tiers). The LLM call for answer synthesis is likewise the *last, optional* step and
 provider-agnostic (Claude or Groq): with no key configured at all, the API returns
 the retrieved excerpts with citations instead of prose — degraded, not broken. That
 mirrors how the system actually fails in production: if retrieval is good, the raw
 excerpts are still useful; if retrieval is bad, no LLM can save the answer anyway.
 
-Having the eval set (below) made this swap a measured decision rather than a guess —
-moving from local bge-small to Gemini embeddings lifted top-1 retrieval accuracy from
-60% to 80% on the same 15 questions, which is exactly the kind of "is this upgrade
-worth it" question the harness exists to answer. The trade-off in the other direction:
-Gemini's free tier is rate-limited, so indexing throttles into small sub-batches with
-backoff (`app/embeddings.py`) — fine for portfolio-scale repos, slower for huge ones.
+Having the eval set (below) made the provider choice a measured decision rather than a
+guess — Gemini embeddings scored higher than local bge-small on the same 15 questions
+(top-1 80% vs 60%), which is exactly the "is this upgrade worth it" question the
+harness exists to answer. But local is the **default** on purpose: Gemini's free tier
+is rate- *and* daily-quota-limited (indexing throttles into sub-batches with backoff
+in `app/embeddings.py`, and heavy re-indexing can exhaust the daily cap), so for an
+open-source project where anyone clones and indexes repos, the zero-dependency local
+path is the robust choice. Pick Gemini deliberately when you want its accuracy and
+have quota to spare.
 
 ### 4. Measure retrieval, don't vibe-check it
 
@@ -128,7 +130,7 @@ accuracy: did an expected file appear in the top k chunks?
 
 Measured results, both embedding providers:
 
-| metric | local (bge-small) | Gemini (deployed) |
+| metric | local (bge-small, default) | Gemini (optional) |
 |---|---|---|
 | top-1 accuracy | 9/15 (60%) | 12/15 (80%) |
 | top-3 accuracy | 13/15 (87%) | **15/15 (100%)** |
@@ -155,13 +157,20 @@ createdb rag_codebase
 # App
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-cp .env.example .env               # add ANTHROPIC_API_KEY here when you have one
+cp .env.example .env               # optional: add GROQ_API_KEY (free) for prose answers
 .venv/bin/uvicorn app.main:app     # http://localhost:8000
 ```
+
+That's the whole setup — **no API keys required** to index a repo and get cited
+retrieval results, because embeddings run locally by default. A free Groq (or
+Anthropic) key just upgrades the raw excerpts into a synthesized prose answer.
 
 First indexing run downloads the embedding model (~130MB, one time, cached).
 
 ```bash
+# Run the tests (chunker correctness; schema test runs if DATABASE_URL is set):
+.venv/bin/python -m pytest
+
 # Reproduce the eval (index the labeled repo first via the UI or API, note its id):
 .venv/bin/python -m scripts.eval <repo_id>
 ```

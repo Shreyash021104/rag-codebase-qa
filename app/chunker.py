@@ -183,6 +183,13 @@ def chunk_file(file_path: str, source: str) -> list[Chunk]:
         node_end = node.end_point[0]
         node_lines = node_end - node_start + 1
 
+        # Only definitions above a small size threshold get their own chunk;
+        # tiny (<=3 line) nodes group into loose-statement chunks instead.
+        # I tried lowering this to "any named definition, however short" so
+        # 2-3 line functions were individually indexed — but the eval set
+        # measured it as a net *regression* (a real question dropped out of
+        # the top-5), so per this project's own "measure, don't vibe"
+        # methodology it doesn't ship. The threshold stays.
         if _is_definition(node) and node_lines > 3:
             flush_pending(prev_end)
             symbol = _node_symbol(node)
