@@ -1,0 +1,44 @@
+# One-command local run: `docker compose up`
+#
+# Brings up Postgres (with pgvector already installed) and the app together,
+# so you don't have to install Postgres or build the pgvector extension from
+# source yourself. First run builds the app image (installs deps + bakes in
+# the embedding model, a few minutes); subsequent runs are instant.
+#
+# No API key is required — embeddings run locally. To get synthesized prose
+# answers on top of the retrieved excerpts, set a free GROQ_API_KEY in your
+# shell (or a .env file) before `docker compose up`.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: rag_codebase
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/rag_codebase
+      EMBEDDING_PROVIDER: local
+      # Optional — passed through from your shell if set. Without it the app
+      # still works, returning retrieved excerpts with citations but no
+      # synthesized prose answer.
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
