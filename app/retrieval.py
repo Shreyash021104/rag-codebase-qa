@@ -10,7 +10,9 @@ different scoring scales — RRF only looks at each result's RANK in each
 list, never its raw score.
 """
 
+import os
 import re
+from collections import OrderedDict
 from dataclasses import dataclass
 
 from rank_bm25 import BM25Okapi
@@ -56,11 +58,18 @@ def tokenize(text: str) -> list[str]:
     return tokens
 
 
-# BM25 index cache, keyed by repo. Invalidated by indexed_at so re-indexing
-# a repo naturally rebuilds it. Fine for a single-process deployment; a
+# BM25 index cache, keyed by repo. Invalidated by indexed_at so re-indexing a
+# repo naturally rebuilds it. Fine for a single-process deployment; a
 # multi-instance deployment would move this into the DB (Postgres full-text
 # search) — noted in the README's scaling section.
-_bm25_cache: dict[int, tuple[str, BM25Okapi, list[int]]] = {}
+#
+# Bounded, because each entry holds a whole repo's tokenized corpus in memory.
+# An unbounded dict keeps every repo ever queried resident for the lifetime of
+# the process, so a server used across many repos grows until it is killed.
+# Least-recently-used eviction keeps the hot repos and drops the rest; a
+# dropped repo just pays one rebuild on its next query.
+_BM25_CACHE_SIZE = int(os.environ.get("BM25_CACHE_SIZE", "8"))
+_bm25_cache: "OrderedDict[int, tuple[str, BM25Okapi, list[int]]]" = OrderedDict()
 
 
 def _bm25_for_repo(conn, repo_id: int) -> tuple[BM25Okapi, list[int]] | None:
@@ -73,6 +82,7 @@ def _bm25_for_repo(conn, repo_id: int) -> tuple[BM25Okapi, list[int]] | None:
 
     cached = _bm25_cache.get(repo_id)
     if cached and cached[0] == version:
+        _bm25_cache.move_to_end(repo_id)
         return cached[1], cached[2]
 
     rows = conn.execute(
@@ -85,7 +95,42 @@ def _bm25_for_repo(conn, repo_id: int) -> tuple[BM25Okapi, list[int]] | None:
     bm25 = BM25Okapi(corpus)
     chunk_ids = [r[0] for r in rows]
     _bm25_cache[repo_id] = (version, bm25, chunk_ids)
+    _bm25_cache.move_to_end(repo_id)
+    while len(_bm25_cache) > _BM25_CACHE_SIZE:
+        _bm25_cache.popitem(last=False)
     return bm25, chunk_ids
+
+
+# Standard RRF constant. It dampens the gap between adjacent top ranks, so a
+# document ranked 1st by one leg does not automatically outrank a document
+# ranked 2nd by both.
+RRF_K = 60
+
+
+def reciprocal_rank_fusion(
+    rankings: list[list[int]], k: int = RRF_K
+) -> dict[int, float]:
+    """Fuse ranked id lists by rank alone, never by score.
+
+    The two legs score on incompatible scales — cosine distance and BM25
+    relevance — so combining the raw numbers would need normalisation tuned
+    per corpus. RRF sidesteps that: each list contributes 1/(k + rank) for
+    whatever it ranked, and appearing in both lists is what wins.
+    """
+    fused: dict[int, float] = {}
+    for ranking in rankings:
+        for rank, chunk_id in enumerate(ranking):
+            fused[chunk_id] = fused.get(chunk_id, 0.0) + 1.0 / (k + rank + 1)
+    return fused
+
+
+def rank_fused(fused: dict[int, float], limit: int) -> list[int]:
+    """Highest fused score first, ties broken by chunk id.
+
+    The tie-break is explicit rather than relying on dict insertion order,
+    which would make results depend on which leg happened to return first.
+    """
+    return sorted(fused, key=lambda cid: (-fused[cid], cid))[:limit]
 
 
 def search(repo_id: int, question: str) -> list[RetrievedChunk]:
@@ -112,13 +157,8 @@ def search(repo_id: int, question: str) -> list[RetrievedChunk]:
             bm25_ranked = [cid for cid, s in scored[:BM25_TOP_K] if s > 0]
 
         # --- Reciprocal rank fusion ---
-        K = 60  # standard RRF constant; dampens the gap between top ranks
-        fused: dict[int, float] = {}
-        for ranking in (vector_ranked, bm25_ranked):
-            for rank, chunk_id in enumerate(ranking):
-                fused[chunk_id] = fused.get(chunk_id, 0.0) + 1.0 / (K + rank + 1)
-
-        top_ids = sorted(fused, key=lambda cid: fused[cid], reverse=True)[:FUSED_TOP_K]
+        fused = reciprocal_rank_fusion([vector_ranked, bm25_ranked])
+        top_ids = rank_fused(fused, FUSED_TOP_K)
         if not top_ids:
             return []
 
